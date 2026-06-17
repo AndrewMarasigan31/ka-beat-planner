@@ -19,6 +19,8 @@ def build_field_csv(beats: list, day_assignments: dict, beat_agents: dict) -> by
     for beat in beats:
         bid = beat["beat_id"]
         day = day_assignments.get(bid, "Unassigned")
+        if day in ("Unassigned", "Caller", ""):
+            continue
         agent = beat_agents.get(bid, beat["assigned_agent"])
         for _, row in beat["stores"].iterrows():
             rows.append({

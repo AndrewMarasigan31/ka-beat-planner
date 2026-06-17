@@ -5,3 +5,4 @@ scikit-learn==1.5.0
 folium==0.17.0
 streamlit-folium==0.20.0
 numpy==1.26.4
+shapely==2.0.4

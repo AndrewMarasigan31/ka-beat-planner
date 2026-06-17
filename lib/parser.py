@@ -1,3 +1,5 @@
+import datetime
+
 import pandas as pd
 
 REQUIRED_COLUMNS = [
@@ -12,10 +14,33 @@ REQUIRED_COLUMNS = [
     "cohort",
     "MTD Delivered",
     "Last Delivered Order Date",
+    "Last Placed Order Date",
+    "Pending GMV MTD",
 ]
 
 FIELD_PREFIXES = ("[SKAS/", "[GKAS/")
 CALLER_PREFIX = "[Caller/KA]"
+
+_EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
+
+
+def _convert_date_col(series: pd.Series) -> pd.Series:
+    """Convert a column that may contain Excel serial ints or strings to date strings (YYYY-MM-DD)."""
+    def _to_date(val):
+        if pd.isna(val):
+            return None
+        if isinstance(val, (int, float)):
+            try:
+                return (_EXCEL_EPOCH + datetime.timedelta(days=int(val))).strftime("%Y-%m-%d")
+            except Exception:
+                return None
+        if isinstance(val, (datetime.datetime, datetime.date)):
+            return pd.Timestamp(val).strftime("%Y-%m-%d")
+        try:
+            return pd.to_datetime(val).strftime("%Y-%m-%d")
+        except Exception:
+            return None
+    return series.map(_to_date)
 
 
 def parse_xlsx(file) -> dict:
@@ -35,6 +60,13 @@ def parse_xlsx(file) -> dict:
     df = df.rename(columns={"point_y": "lat", "point_x": "lng"})
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lng"] = pd.to_numeric(df["lng"], errors="coerce")
+
+    df["Last Delivered Order Date"] = _convert_date_col(df["Last Delivered Order Date"])
+    df["Last Placed Order Date"] = _convert_date_col(df["Last Placed Order Date"])
+
+    df["MTD Delivered"] = pd.to_numeric(df["MTD Delivered"], errors="coerce").fillna(0)
+    df["Pending GMV MTD"] = pd.to_numeric(df["Pending GMV MTD"], errors="coerce").fillna(0)
+    df["has_pending"] = df["Pending GMV MTD"] > 0
 
     all_agents = df["agent"].dropna().unique().tolist()
     field_agents = [a for a in all_agents if str(a).startswith(FIELD_PREFIXES)]

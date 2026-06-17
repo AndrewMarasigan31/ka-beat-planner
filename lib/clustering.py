@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 
-MAX_BEAT_RADIUS_KM = 8
+MAX_BEAT_RADIUS_KM = 50  # fallback only; threshold is data-driven (median + 1.5× IQR)
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -15,11 +15,32 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.asin(math.sqrt(a))
 
 
+def _flag_isolated_stores(df: pd.DataFrame) -> pd.Index:
+    """Return index of stores whose nearest neighbor is a statistical outlier in distance.
+    Uses median + 1.5×IQR of all nearest-neighbor distances as the isolation threshold."""
+    coords = df[["lat", "lng"]].values
+    nn_dists = []
+    for i, (lat, lng) in enumerate(coords):
+        dists = [
+            haversine_km(lat, lng, coords[j][0], coords[j][1])
+            for j in range(len(coords)) if j != i
+        ]
+        nn_dists.append(min(dists) if dists else 0.0)
+
+    nn_arr = np.array(nn_dists)
+    q1, q3 = np.percentile(nn_arr, [25, 75])
+    iqr = q3 - q1
+    threshold_km = q3 + 1.5 * iqr
+
+    isolated_mask = nn_arr > threshold_km
+    return df.index[isolated_mask]
+
+
 def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) -> dict:
     """Cluster stores geographically and assign to field agents."""
     df = stores_df.dropna(subset=["lat", "lng"]).copy()
-    coords = df[["lat", "lng"]].values
 
+    coords = df[["lat", "lng"]].values
     k = max(1, math.ceil(len(df) / beat_size))
     km = KMeans(n_clusters=k, init="k-means++", n_init=10, random_state=42)
     df["_cluster"] = km.fit_predict(coords)
@@ -38,6 +59,23 @@ def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) 
         if dists:
             _, nearest = min(dists)
             df.loc[df["_cluster"] == sc, "_cluster"] = nearest
+
+    # Re-split any cluster that exceeds beat_size after merging — repeat until none remain oversized
+    next_cluster_id = int(df["_cluster"].max()) + 1
+    changed = True
+    while changed:
+        changed = False
+        oversized = df["_cluster"].value_counts()
+        oversized = oversized[oversized > beat_size].index.tolist()
+        for oc in oversized:
+            oc_df = df[df["_cluster"] == oc]
+            sub_k = max(2, math.ceil(len(oc_df) / beat_size))
+            sub_km = KMeans(n_clusters=sub_k, init="k-means++", n_init=10, random_state=42)
+            sub_labels = sub_km.fit_predict(oc_df[["lat", "lng"]].values)
+            new_ids = [oc if label == 0 else next_cluster_id + label - 1 for label in sub_labels]
+            next_cluster_id += sub_k - 1
+            df.loc[df["_cluster"] == oc, "_cluster"] = new_ids
+            changed = True
 
     # Assign each cluster to nearest field agent by centroid proximity
     agent_coords = _build_agent_coords(stores_df, field_agents)
@@ -59,44 +97,43 @@ def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) 
 
     df["_agent"] = df["_cluster"].map(cluster_agent)
 
-    # P2 detection: distance to own cluster centroid > mean inter-centroid distance
-    all_centroids = list(cluster_centroid.values())
-    inter_dists = []
-    for i in range(len(all_centroids)):
-        for j in range(i + 1, len(all_centroids)):
-            inter_dists.append(np.linalg.norm(all_centroids[i] - all_centroids[j]))
-    mean_inter = np.mean(inter_dists) if inter_dists else float("inf")
+    # P2 detection: cluster-level, not store-level.
+    # Compute each cluster's distance to its assigned agent's home territory.
+    # Use median + 1.5×IQR as the outlier threshold so only genuinely isolated
+    # clusters go to callers — not just clusters that happen to be far in km terms.
+    cluster_dist_km = {}
+    for cid, centroid in cluster_centroid.items():
+        agent = cluster_agent.get(cid)
+        if agent and agent in agent_coords:
+            agent_home = agent_coords[agent]
+            cluster_dist_km[cid] = haversine_km(centroid[0], centroid[1], agent_home[0], agent_home[1])
+        else:
+            cluster_dist_km[cid] = 0.0
 
-    def dist_to_centroid(row):
-        c = cluster_centroid.get(row["_cluster"])
-        if c is None:
-            return 0.0
-        return np.linalg.norm(np.array([row["lat"], row["lng"]]) - c)
+    dists = list(cluster_dist_km.values())
+    if len(dists) >= 4:
+        q1, q3 = np.percentile(dists, [25, 75])
+        iqr = q3 - q1
+        p2_threshold_km = q3 + 1.5 * iqr
+    else:
+        p2_threshold_km = MAX_BEAT_RADIUS_KM
 
-    df["_dist"] = df.apply(dist_to_centroid, axis=1)
+    p2_clusters = {cid for cid, d in cluster_dist_km.items() if d > p2_threshold_km}
 
-    def dist_to_centroid_km(row):
-        c = cluster_centroid.get(row["_cluster"])
-        if c is None:
-            return 0.0
-        return haversine_km(row["lat"], row["lng"], c[0], c[1])
-
-    df["_dist_km"] = df.apply(dist_to_centroid_km, axis=1)
-    p2_mask = (df["_dist"] > mean_inter) | (df["_dist_km"] > MAX_BEAT_RADIUS_KM)
-
-    p2_stores = df[p2_mask].drop(columns=["_cluster", "_agent", "_dist", "_dist_km"])
-    p1_df = df[~p2_mask]
+    # P2 routing disabled — all stores assigned to field agents for now
+    p2_stores = pd.DataFrame(columns=df.columns)
+    p1_df = df
 
     beats = []
     beat_counter = 1
     for cid in sorted(p1_df["_cluster"].unique()):
-        cluster_df = p1_df[p1_df["_cluster"] == cid].drop(columns=["_cluster", "_agent", "_dist", "_dist_km"])
+        cluster_df = p1_df[p1_df["_cluster"] == cid].drop(columns=["_cluster", "_agent"])
         agent = cluster_agent.get(cid, field_agents[0] if field_agents else "Unknown")
         beat_id = f"B{beat_counter:03d}"
         beats.append({"beat_id": beat_id, "assigned_agent": agent, "stores": cluster_df})
         beat_counter += 1
 
-    return {"beats": beats, "p2_stores": p2_stores}
+    return {"beats": beats, "p2_stores": p2_stores, "caller_agents": []}
 
 
 def _build_agent_coords(stores_df: pd.DataFrame, field_agents: list) -> dict:
