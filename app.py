@@ -1,5 +1,6 @@
 import streamlit as st
 from lib.parser import parse_xlsx
+from lib.clustering import run_clustering
 
 st.set_page_config(
     page_title="KA Beat Planner",
@@ -51,7 +52,31 @@ with st.expander("📂 Upload", expanded=True):
 
 # ── Beat Planner ─────────────────────────────────────────────────────────────
 with st.expander("🗺️ Beat Planner", expanded=False):
-    st.info("Configure and run beat clustering here.")
+    parsed = st.session_state.get("parsed")
+    if not parsed:
+        st.info("Upload a store list first.")
+    else:
+        beat_size = st.number_input("Beat size (stores per beat)", min_value=5, max_value=100, value=30, step=1)
+
+        if st.button("Run Clustering"):
+            result = run_clustering(parsed["stores"], int(beat_size), parsed["field_agents"])
+            st.session_state["clustering"] = result
+
+        clustering = st.session_state.get("clustering")
+        if clustering:
+            beats = clustering["beats"]
+            p2 = clustering["p2_stores"]
+
+            beat_counts = {}
+            for b in beats:
+                a = b["assigned_agent"]
+                beat_counts[a] = beat_counts.get(a, 0) + 1
+
+            st.success(f"**{len(beats)}** beats · **{len(p2)}** P2 stores sent to callers")
+
+            rows = [{"agent": a, "beats": c} for a, c in beat_counts.items()]
+            import pandas as pd
+            st.dataframe(pd.DataFrame(rows).sort_values("agent"), use_container_width=True)
 
 # ── Export ───────────────────────────────────────────────────────────────────
 with st.expander("📥 Export", expanded=False):
