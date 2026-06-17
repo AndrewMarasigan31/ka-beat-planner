@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 from lib.parser import parse_xlsx
 from lib.clustering import run_clustering
 from lib.composer import compose_beats
+from lib.exporter import build_field_csv, build_caller_csv
 
 st.set_page_config(
     page_title="KA Beat Planner",
@@ -239,5 +240,43 @@ with st.expander("📅 Day Assignment", expanded=False):
         st.dataframe(grid_df, use_container_width=True)
 
 # ── Export ───────────────────────────────────────────────────────────────────
+import datetime
+
 with st.expander("📥 Export", expanded=False):
-    st.info("Download field agent schedules and caller lists here.")
+    clustering = st.session_state.get("clustering")
+    parsed = st.session_state.get("parsed")
+    day_assignments = st.session_state.get("day_assignments", {})
+    beat_agents = st.session_state.get("beat_agents", {})
+
+    if not clustering:
+        st.info("Run clustering and assign days first.")
+    else:
+        beats = clustering["beats"]
+        p2 = clustering["p2_stores"]
+        caller_agents = parsed["caller_agents"] if parsed else []
+
+        unassigned = [bid for bid, d in day_assignments.items() if d == "Unassigned"]
+        export_disabled = len(unassigned) > 0
+
+        if export_disabled:
+            st.warning(f"⚠️ {len(unassigned)} beat(s) unassigned — assign all days before exporting.")
+
+        today = datetime.date.today().strftime("%Y-%m-%d")
+
+        field_csv = build_field_csv(beats, day_assignments, beat_agents)
+        st.download_button(
+            label="⬇️ Download Field Agent Schedule",
+            data=field_csv,
+            file_name=f"ka_field_schedule_{today}.csv",
+            mime="text/csv",
+            disabled=export_disabled,
+        )
+
+        caller_csv = build_caller_csv(p2, caller_agents)
+        st.download_button(
+            label="⬇️ Download Caller List (P2 stores)",
+            data=caller_csv,
+            file_name=f"ka_caller_list_{today}.csv",
+            mime="text/csv",
+            disabled=export_disabled,
+        )
