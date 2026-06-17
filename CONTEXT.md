@@ -6,30 +6,32 @@
 One field agent's store list for a single visit day. A beat is a geographic cluster of stores assigned to one agent for one day.
 
 **Beat Size**
-Number of stores per beat (i.e. per agent per day). Supervisor-adjustable at session start — not hardcoded.
+Number of stores per beat (i.e. per agent per day). Supervisor-adjustable at session start — re-clustering does not require re-upload.
 
 **P1 Store**
-A store within the supervisor-set distance threshold of a field agent's territory. Gets assigned to a field agent for a physical visit, regardless of its current `agent` column value (may have been a caller store before).
+A store assigned to a field agent beat after clustering. Gets a physical visit.
 
-**P2 Store**
-A store beyond the distance threshold of all field agent territories. Stays with a caller agent — no physical visit possible.
+**P2 / Caller Store**
+A store routed to callers instead of field agents. Two ways a store becomes P2:
+1. **Lasso exclusion** — supervisor draws a polygon on the map to exclude stores from beats. Excluded stores appear in the Caller list tagged as "Excluded".
+2. **Day Assignment override** — supervisor sets a beat's day to "→ Caller", routing that entire beat to callers.
 
-**Distance Threshold**
-Not a fixed km value. P1/P2 is determined by the clustering itself: stores that fall naturally within a field agent's k-means cluster are P1; stores that are outliers (no field agent cluster is near) become P2. Driven by actual lead density and geography.
+There is no algorithmic P2 detection. The supervisor drives all P1/P2 decisions.
 
 **Field Agent**
 Agent with prefix `[SKAS/...]` or `[GKAS/...]`. Gets full beat planning: geographic clustering, map view, day assignment, CSV export.
 
 **Caller Agent**
-Agent with prefix `[Caller/KA]`. Excluded from beat planning. Receives only P2 stores (those no field agent can reach). No map, no day clustering.
+Agent with prefix `[Caller/KA]`. Excluded from beat planning. Receives P2 stores (lasso-excluded or caller-assigned beats). Shown in the Caller CSV export.
 
 ## Clustering Approach
 
 1. Identify field agents vs caller agents from the `agent` column naming convention.
 2. Run geographic k-means clustering across **all stores** (not per existing agent assignment), constrained to beat size.
-3. Assign each cluster to the nearest field agent.
-4. Stores whose nearest cluster centroid exceeds the distance threshold → P2 → stay with callers.
-5. Supervisor can adjust beat-to-agent and day assignments after clustering.
+3. Merge small clusters (< 50% of beat size) into nearest neighbor.
+4. Re-split any cluster exceeding beat size iteratively until all clusters are within the cap.
+5. Assign each cluster to the nearest field agent by centroid proximity.
+6. Supervisor adjusts beat-to-agent and day assignments after clustering.
 
 ## GMV Priority & Visit Frequency
 
@@ -41,18 +43,18 @@ Goal: drive GMV and delivered store count. Beat planning enforces this via prior
 | Active But Low GMV | 2 — Grow | 1–2x | Fill remaining capacity after High GMV |
 | Inactive | 3 — Reactivate | 1x | Assigned last; dropped first if beat is over capacity |
 
-When a beat exceeds the supervisor-set beat size, stores are trimmed in reverse priority order (Inactive first, then Low GMV).
+When a beat exceeds the supervisor-set beat size, stores are trimmed in reverse priority order (Inactive first, then Low GMV). High GMV stores are never trimmed.
 
 ## Input
 
 - Excel (XLSX) upload each session
 - All 3 cohorts included: `Active But High GMV Store`, `Active But Low GMV Store`, `Inactive Store`
-- No store exclusions by cohort or status
+- No store exclusions by cohort or status at upload time
 
 ## Output
 
-- CSV export per agent per day (field agents only)
-- Caller store list as separate CSV (P2 stores, no day breakdown)
+- **Field CSV** — one row per store, per agent per day (skips unassigned and caller-assigned beats)
+- **Caller CSV** — flat list of P2 stores (lasso-excluded + caller-assigned beats), round-robin distributed across caller agents
 
 ## Key Columns (from XLSX)
 
@@ -60,11 +62,15 @@ When a beat exceeds the supervisor-set beat size, stores are trimmed in reverse 
 |---|---|
 | `store_id` | Unique store identifier |
 | `store_name` | Display name |
-| `agent` | Current assignment — used to detect agent type; overridable |
+| `agent` | Current assignment — used to detect agent type; overridable in Day Assignment |
 | `gcu` | Geographic cluster unit |
 | `warehouse` | BC / SL / ST |
-| `point_y` | Latitude |
-| `point_x` | Longitude |
+| `point_y` | Latitude (note: reversed from conventional naming) |
+| `point_x` | Longitude (note: reversed from conventional naming) |
 | `visit_day` | Current day assignment — starting point, supervisor can change |
 | `cohort` | Active High GMV / Active Low GMV / Inactive |
-| `Delivered TW / LW / MTD` | GMV metrics shown in UI |
+| `MTD Delivered` | Month-to-date delivered order count |
+| `Last Delivered Order Date` | Date of last fulfilled order (Excel serial → YYYY-MM-DD) |
+| `Last Placed Order Date` | Date of last placed order (Excel serial → YYYY-MM-DD) |
+| `Pending GMV MTD` | Pending GMV for the current month |
+| `has_pending` | Derived flag: `Pending GMV MTD > 0` |
