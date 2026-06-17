@@ -61,6 +61,7 @@ def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) 
             df.loc[df["_cluster"] == sc, "_cluster"] = nearest
 
     # Re-split any cluster that exceeds beat_size after merging — repeat until none remain oversized
+    df["_cluster"] = df["_cluster"].astype(np.int64)
     next_cluster_id = int(df["_cluster"].max()) + 1
     changed = True
     while changed:
@@ -72,7 +73,10 @@ def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) 
             sub_k = max(2, math.ceil(len(oc_df) / beat_size))
             sub_km = KMeans(n_clusters=sub_k, init="k-means++", n_init=10, random_state=42)
             sub_labels = sub_km.fit_predict(oc_df[["lat", "lng"]].values)
-            new_ids = [oc if label == 0 else next_cluster_id + label - 1 for label in sub_labels]
+            new_ids = np.array(
+                [int(oc) if label == 0 else next_cluster_id + int(label) - 1 for label in sub_labels],
+                dtype=np.int64,
+            )
             next_cluster_id += sub_k - 1
             df.loc[df["_cluster"] == oc, "_cluster"] = new_ids
             changed = True
