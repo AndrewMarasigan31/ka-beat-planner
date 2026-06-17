@@ -157,8 +157,52 @@ with st.expander("🗺️ Beat Planner", expanded=False):
             rows = [{"agent": a, "beats": c} for a, c in beat_counts.items()]
             st.dataframe(pd.DataFrame(rows).sort_values("agent"), use_container_width=True)
 
-            fmap = build_map(beats, p2, agent_colors)
+            # ── Filters ──────────────────────────────────────────────────────
+            all_agents_sorted = sorted({b["assigned_agent"] for b in beats})
+            filter_col1, filter_col2 = st.columns(2)
+
+            with filter_col1:
+                agent_filter = st.selectbox(
+                    "Agent",
+                    options=["All Agents"] + all_agents_sorted,
+                    key="map_agent_filter",
+                )
+
+            # Narrow beat options by selected agent
+            if agent_filter == "All Agents":
+                beats_for_filter = beats
+            else:
+                beats_for_filter = [b for b in beats if b["assigned_agent"] == agent_filter]
+
+            beat_options = ["All Beats"] + sorted(b["beat_id"] for b in beats_for_filter)
+
+            with filter_col2:
+                beat_filter = st.selectbox(
+                    "Beat",
+                    options=beat_options,
+                    key="map_beat_filter",
+                )
+
+            # Apply filters
+            filtered_beats = beats_for_filter
+            if beat_filter != "All Beats":
+                filtered_beats = [b for b in filtered_beats if b["beat_id"] == beat_filter]
+
+            # ── Map ───────────────────────────────────────────────────────────
+            fmap = build_map(filtered_beats, p2 if agent_filter == "All Agents" and beat_filter == "All Beats" else pd.DataFrame(), agent_colors)
             st_folium(fmap, use_container_width=True, height=600)
+
+            # ── Store Table ───────────────────────────────────────────────────
+            table_rows = []
+            for b in filtered_beats:
+                df_b = b["stores"].copy()
+                df_b.insert(0, "beat_id", b["beat_id"])
+                df_b.insert(1, "assigned_agent", b["assigned_agent"])
+                table_rows.append(df_b)
+
+            if table_rows:
+                table_df = pd.concat(table_rows, ignore_index=True)
+                st.dataframe(table_df, use_container_width=True)
 
 # ── Day Assignment ───────────────────────────────────────────────────────────
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Unassigned"]

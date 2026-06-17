@@ -3,6 +3,17 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 
+MAX_BEAT_RADIUS_KM = 8
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in kilometres between two lat/lon points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
 
 def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) -> dict:
     """Cluster stores geographically and assign to field agents."""
@@ -63,15 +74,23 @@ def run_clustering(stores_df: pd.DataFrame, beat_size: int, field_agents: list) 
         return np.linalg.norm(np.array([row["lat"], row["lng"]]) - c)
 
     df["_dist"] = df.apply(dist_to_centroid, axis=1)
-    p2_mask = df["_dist"] > mean_inter
 
-    p2_stores = df[p2_mask].drop(columns=["_cluster", "_agent", "_dist"])
+    def dist_to_centroid_km(row):
+        c = cluster_centroid.get(row["_cluster"])
+        if c is None:
+            return 0.0
+        return haversine_km(row["lat"], row["lng"], c[0], c[1])
+
+    df["_dist_km"] = df.apply(dist_to_centroid_km, axis=1)
+    p2_mask = (df["_dist"] > mean_inter) | (df["_dist_km"] > MAX_BEAT_RADIUS_KM)
+
+    p2_stores = df[p2_mask].drop(columns=["_cluster", "_agent", "_dist", "_dist_km"])
     p1_df = df[~p2_mask]
 
     beats = []
     beat_counter = 1
     for cid in sorted(p1_df["_cluster"].unique()):
-        cluster_df = p1_df[p1_df["_cluster"] == cid].drop(columns=["_cluster", "_agent", "_dist"])
+        cluster_df = p1_df[p1_df["_cluster"] == cid].drop(columns=["_cluster", "_agent", "_dist", "_dist_km"])
         agent = cluster_agent.get(cid, field_agents[0] if field_agents else "Unknown")
         beat_id = f"B{beat_counter:03d}"
         beats.append({"beat_id": beat_id, "assigned_agent": agent, "stores": cluster_df})
