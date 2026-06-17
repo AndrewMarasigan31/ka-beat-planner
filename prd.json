@@ -1,0 +1,137 @@
+{
+  "project": "KA Beat Planner",
+  "branchName": "ralph/ka-beat-planner",
+  "description": "Build a Streamlit app that lets KA supervisors upload a store list, cluster stores into geographic daily beats per field agent, enforce GMV-based visit priority, visualize beats on a map, assign days, and export per-agent CSV schedules.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffold + password gate",
+      "githubIssue": 2,
+      "description": "Scaffold the Streamlit app with a password gate and three placeholder sections: Upload, Beat Planner, Export.",
+      "acceptanceCriteria": [
+        "app.py runs with `streamlit run app.py` without errors",
+        "requirements.txt includes streamlit, pandas, openpyxl, scikit-learn, folium, streamlit-folium, numpy",
+        ".streamlit/config.toml sets a clean blue theme",
+        "Password input shown on load; wrong password blocks access",
+        "Correct password (ka2026) reveals main app shell with three labelled sections",
+        "lib/ directory exists with empty __init__.py",
+        "GitHub issue #2 closed with comment linking to the commit"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "XLSX parser + agent classifier",
+      "githubIssue": 3,
+      "description": "XLSX upload UI and parser. Validates required columns, classifies agents as field or caller, surfaces a summary.",
+      "acceptanceCriteria": [
+        "lib/parser.py exports parse_xlsx(file) -> dict with keys: stores (DataFrame), field_agents (list), caller_agents (list), errors (list)",
+        "Required columns validated: store_id, store_name, agent, gcu, warehouse, point_y, point_x, visit_day, cohort, MTD Delivered, Last Delivered Order Date",
+        "Missing columns returned in errors; app shows st.error with missing column names",
+        "Field agents detected by prefix [SKAS/ or [GKAS/; caller agents by prefix [Caller/KA]",
+        "point_y mapped to lat, point_x mapped to lng internally",
+        "All 3 cohort values pass through: Active But High GMV Store, Active But Low GMV Store, Inactive Store",
+        "After upload, app shows: total stores, field agent count, caller agent count, store count per field agent",
+        "GitHub issue #3 closed with comment linking to the commit"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Beat clusterer + P1/P2 resolver",
+      "githubIssue": 4,
+      "description": "K-means geographic clustering, cluster-to-agent assignment, and P1/P2 outlier classification.",
+      "acceptanceCriteria": [
+        "lib/clustering.py exports run_clustering(stores_df, beat_size, field_agents) -> dict with keys: beats (list of dicts), p2_stores (DataFrame)",
+        "Each beat dict has: beat_id, assigned_agent, stores (DataFrame)",
+        "k = ceil(total_stores / beat_size); scikit-learn KMeans with init=k-means++",
+        "Clusters smaller than beat_size * 0.5 merged into nearest neighbor before agent assignment",
+        "Each cluster assigned to nearest field agent by centroid distance",
+        "P2 stores: distance to assigned cluster centroid exceeds mean inter-centroid distance",
+        "P2 stores removed from beats and returned separately",
+        "Supervisor sets beat size via st.number_input (min 5, max 100, default 30); re-run without re-upload",
+        "App shows beat count per field agent and P2 store count",
+        "GitHub issue #4 closed with comment linking to the commit"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Beat composer — GMV priority + visit frequency",
+      "githubIssue": 5,
+      "description": "Post-clustering step: enforces GMV priority within beats, trims over-capacity, duplicates stores into multiple day-slots.",
+      "acceptanceCriteria": [
+        "lib/composer.py exports compose_beats(beats, beat_size) -> list of ComposedBeat dicts",
+        "Within each beat, stores sorted: Active But High GMV Store first, Active But Low GMV Store second, Inactive Store last",
+        "If beat exceeds beat_size: Inactive trimmed first, then Low GMV; High GMV never trimmed",
+        "Active But High GMV stores duplicated into 3 day-slots; Low GMV into 2; Inactive into 1",
+        "Each slot entry includes store with slot_index (1, 2, or 3) and originating beat_id",
+        "GitHub issue #5 closed with comment linking to the commit"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Beat map (folium)",
+      "githubIssue": 6,
+      "description": "Interactive Folium map: beats color-coded by field agent, P2 stores in grey, store popups with GMV info.",
+      "acceptanceCriteria": [
+        "Map rendered via streamlit-folium (st_folium)",
+        "Each field agent assigned a distinct color; all beats for that agent share it",
+        "Store circle markers; popup shows: store name, agent, beat ID, cohort, MTD Delivered, Last Delivered Date",
+        "P2 stores shown as grey markers with caller assignment in popup",
+        "Map auto-fits bounds to all store coordinates",
+        "Map re-renders when clustering is re-run",
+        "GitHub issue #6 closed with comment linking to the commit"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Day assignment + beat reassignment UI",
+      "githubIssue": 7,
+      "description": "UI for assigning days (Mon–Sat) to beats and reassigning beats between agents. Shows agent × day summary grid.",
+      "acceptanceCriteria": [
+        "Each beat shown in table row: beat ID, assigned agent (editable dropdown), store count, day selector (Mon–Sat + Unassigned)",
+        "Beats grouped by agent",
+        "Changing agent dropdown reassigns that beat in session state",
+        "Changing day selector updates beat's day assignment in session state",
+        "Summary table shows agent × day grid with store count per cell",
+        "Unassigned beats visually highlighted",
+        "GitHub issue #7 closed with comment linking to the commit"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "CSV export — field agents + P2 callers",
+      "githubIssue": 8,
+      "description": "Two CSV download buttons: per-agent-per-day schedule for field agents, flat list for P2 caller stores.",
+      "acceptanceCriteria": [
+        "lib/exporter.py exports build_field_csv(beats, day_assignments) -> bytes and build_caller_csv(p2_stores) -> bytes",
+        "Field CSV columns: agent_name, day, beat_id, store_id, store_name, gcu, city, locality, cohort, mtd_delivered, last_delivered_date",
+        "Field CSV sorted: agent_name -> day (Mon first) -> beat_id -> store_id",
+        "Caller CSV columns: agent_name, store_id, store_name, gcu, city, locality, cohort, mtd_delivered, last_delivered_date",
+        "Both via st.download_button — no server-side file writing",
+        "Buttons disabled if any beat is still Unassigned",
+        "File names: ka_field_schedule_<YYYY-MM-DD>.csv and ka_caller_list_<YYYY-MM-DD>.csv",
+        "GitHub issue #8 closed with comment linking to the commit"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
