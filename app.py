@@ -1,6 +1,7 @@
 import streamlit as st
 from lib.parser import parse_xlsx
 from lib.clustering import run_clustering
+from lib.composer import compose_beats
 
 st.set_page_config(
     page_title="KA Beat Planner",
@@ -60,6 +61,7 @@ with st.expander("🗺️ Beat Planner", expanded=False):
 
         if st.button("Run Clustering"):
             result = run_clustering(parsed["stores"], int(beat_size), parsed["field_agents"])
+            result["composed"] = compose_beats(result["beats"], int(beat_size))
             st.session_state["clustering"] = result
 
         clustering = st.session_state.get("clustering")
