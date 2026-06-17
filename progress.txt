@@ -1,3 +1,65 @@
 # Ralph Progress Log — KA Beat Planner
 Started: 2026-06-17
 ---
+
+## 2026-06-17 - US-007
+- Created lib/exporter.py: build_field_csv() and build_caller_csv() return bytes via BytesIO
+- Updated app.py Export section: two st.download_button widgets, disabled while any beat is unassigned
+- P2 stores round-robin assigned across caller agents in caller CSV
+- File names include today's date: ka_field_schedule_YYYY-MM-DD.csv / ka_caller_list_YYYY-MM-DD.csv
+- **Learnings:**
+  - st.download_button disabled= param suppresses the button without removing it
+  - Must import datetime at module level (or locally) — used datetime.date.today().strftime()
+---
+
+## 2026-06-17 - US-006
+- Added Day Assignment expander in app.py: per-beat agent dropdown and day selector, grouped by agent
+- Summary grid shows agent × day store counts; unassigned beats shown as warning
+- day_assignments and beat_agents stored in st.session_state for persistence
+- **Learnings:**
+  - Selectbox index must guard against agent not in list (use conditional)
+  - Reset day_assignments/beat_agents only on new clustering run, not on every rerun
+---
+
+## 2026-06-17 - US-005
+- Added build_map() in app.py using folium CircleMarker; agent colors from fixed AGENT_PALETTE, P2 stores in grey
+- Rendered via st_folium with use_container_width=True, height=600; map auto-fits bounds
+- agent_colors dict stored in session_state["clustering"] for stable assignment across reruns
+- **Learnings:**
+  - fit_bounds needs [[min_lat, min_lng], [max_lat, max_lng]] order
+  - Always guard against NaN lat/lng before adding markers
+---
+
+## 2026-06-17 - US-004
+- Created lib/composer.py: GMV-priority sort, over-capacity trimming (Inactive → Low GMV), slot expansion (High=3, Low=2, Inactive=1)
+- Updated app.py to run compose_beats() after clustering and store in session_state["clustering"]["composed"]
+- **Learnings:**
+  - Trimming must protect High GMV entirely; Low GMV trimmed only after Inactive exhausted
+  - slot_index and beat_id stamped into each slot dict for downstream day-assignment
+---
+
+## 2026-06-17 - US-003
+- Created lib/clustering.py: K-means clustering, small cluster merging, agent assignment by centroid proximity, P1/P2 detection
+- Updated app.py Beat Planner section with beat_size number_input and Run Clustering button
+- **Learnings:**
+  - P2 threshold = mean inter-centroid distance; stores beyond this go to callers
+  - Small cluster merge must skip clusters already in the small list to avoid circular merge
+  - Agent home coords derived from their original store assignments, not cluster centroids
+---
+
+## 2026-06-17 - US-002
+- Created lib/parser.py: parse_xlsx() validates required columns, renames point_y→lat/point_x→lng, classifies field vs caller agents
+- Updated app.py Upload section to wire up parser, display store/agent summary
+- **Learnings:**
+  - REQUIRED_COLUMNS must match exact XLSX header names (case-sensitive)
+  - point_y/point_x rename must happen before any downstream code reads lat/lng
+---
+
+## 2026-06-17 - US-001
+- Created app.py with password gate (ka2026), session_state auth, and three labelled expander sections
+- Created lib/__init__.py
+- requirements.txt and .streamlit/config.toml were already present
+- **Learnings:**
+  - Use st.rerun() after setting session_state to avoid stale widget state
+  - python3 is the correct command on this machine (not python)
+---
