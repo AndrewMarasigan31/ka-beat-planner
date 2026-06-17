@@ -159,6 +159,85 @@ with st.expander("🗺️ Beat Planner", expanded=False):
             fmap = build_map(beats, p2, agent_colors)
             st_folium(fmap, use_container_width=True, height=600)
 
+# ── Day Assignment ───────────────────────────────────────────────────────────
+DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Unassigned"]
+
+with st.expander("📅 Day Assignment", expanded=False):
+    clustering = st.session_state.get("clustering")
+    parsed = st.session_state.get("parsed")
+    if not clustering:
+        st.info("Run clustering first.")
+    else:
+        beats = clustering["beats"]
+        all_agents = sorted({b["assigned_agent"] for b in beats})
+        if parsed:
+            all_agents_full = sorted(parsed["field_agents"])
+        else:
+            all_agents_full = all_agents
+
+        # Initialize day_assignments and beat_agents in session_state
+        if "day_assignments" not in st.session_state:
+            st.session_state["day_assignments"] = {b["beat_id"]: "Unassigned" for b in beats}
+        if "beat_agents" not in st.session_state:
+            st.session_state["beat_agents"] = {b["beat_id"]: b["assigned_agent"] for b in beats}
+
+        day_assignments = st.session_state["day_assignments"]
+        beat_agents = st.session_state["beat_agents"]
+
+        st.subheader("Beat assignments")
+        for agent in all_agents_full:
+            agent_beats = [b for b in beats if beat_agents.get(b["beat_id"]) == agent]
+            if not agent_beats:
+                continue
+            st.markdown(f"**{agent}**")
+            for beat in agent_beats:
+                bid = beat["beat_id"]
+                col1, col2, col3 = st.columns([2, 3, 2])
+                with col1:
+                    st.write(bid)
+                with col2:
+                    new_agent = st.selectbox(
+                        "Agent",
+                        options=all_agents_full,
+                        index=all_agents_full.index(beat_agents[bid]) if beat_agents[bid] in all_agents_full else 0,
+                        key=f"agent_{bid}",
+                        label_visibility="collapsed",
+                    )
+                    beat_agents[bid] = new_agent
+                with col3:
+                    new_day = st.selectbox(
+                        "Day",
+                        options=DAYS,
+                        index=DAYS.index(day_assignments.get(bid, "Unassigned")),
+                        key=f"day_{bid}",
+                        label_visibility="collapsed",
+                    )
+                    day_assignments[bid] = new_day
+
+        st.session_state["day_assignments"] = day_assignments
+        st.session_state["beat_agents"] = beat_agents
+
+        # Summary grid: agent × day
+        st.subheader("Summary: stores per agent per day")
+        grid_rows = []
+        for agent in all_agents_full:
+            row = {"Agent": agent}
+            for day in DAYS:
+                agent_beats_on_day = [
+                    b for b in beats
+                    if beat_agents.get(b["beat_id"]) == agent and day_assignments.get(b["beat_id"]) == day
+                ]
+                count = sum(len(b["stores"]) for b in agent_beats_on_day)
+                row[day] = count if count > 0 else ""
+            grid_rows.append(row)
+        grid_df = pd.DataFrame(grid_rows)
+
+        unassigned_beats = [bid for bid, d in day_assignments.items() if d == "Unassigned"]
+        if unassigned_beats:
+            st.warning(f"⚠️ {len(unassigned_beats)} beat(s) still unassigned: {', '.join(unassigned_beats)}")
+
+        st.dataframe(grid_df, use_container_width=True)
+
 # ── Export ───────────────────────────────────────────────────────────────────
 with st.expander("📥 Export", expanded=False):
     st.info("Download field agent schedules and caller lists here.")
