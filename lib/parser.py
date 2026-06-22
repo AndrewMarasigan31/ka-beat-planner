@@ -5,6 +5,7 @@ import pandas as pd
 REQUIRED_COLUMNS = [
     "store_id",
     "store_name",
+    "store_username",
     "agent",
     "gcu",
     "warehouse",

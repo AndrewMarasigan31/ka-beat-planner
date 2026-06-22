@@ -474,6 +474,18 @@ with st.expander("📥 Export", expanded=False):
         caller_store_frames = [b["stores"].assign(_caller_beat=b["beat_id"]) for b in caller_beats]
         p2 = pd.concat(caller_store_frames, ignore_index=True) if caller_store_frames else pd.DataFrame()
 
+        # Lasso-excluded stores: collect rows first, then strip from field beats
+        excluded_ids = st.session_state.get("excluded_store_ids", set())
+        if excluded_ids:
+            all_beat_frames = pd.concat([b["stores"] for b in beats], ignore_index=True)
+            excl_rows = all_beat_frames[all_beat_frames["store_id"].isin(excluded_ids)].drop_duplicates("store_id")
+            if not excl_rows.empty:
+                p2 = pd.concat([p2, excl_rows], ignore_index=True)
+            field_beats = [
+                {**b, "stores": b["stores"][~b["stores"]["store_id"].isin(excluded_ids)]}
+                for b in field_beats
+            ]
+
         unassigned = [bid for bid, d in day_assignments.items() if d == "Unassigned" and beat_agents.get(bid) != CALLER_OPTION]
         export_disabled = False
 

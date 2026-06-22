@@ -4,12 +4,12 @@ import pandas as pd
 DAY_ORDER = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5}
 
 FIELD_COLS = [
-    "agent_name", "day", "beat_id", "store_id", "store_name",
+    "agent_name", "day", "beat_id", "store_id", "store_name", "store_username",
     "gcu", "city", "locality", "cohort", "mtd_delivered", "last_delivered_date",
 ]
 
 CALLER_COLS = [
-    "agent_name", "store_id", "store_name",
+    "agent_name", "store_id", "store_name", "store_username",
     "gcu", "city", "locality", "cohort", "mtd_delivered", "last_delivered_date",
 ]
 
@@ -29,6 +29,7 @@ def build_field_csv(beats: list, day_assignments: dict, beat_agents: dict) -> by
                 "beat_id": bid,
                 "store_id": row.get("store_id", ""),
                 "store_name": row.get("store_name", ""),
+                "store_username": row.get("store_username", ""),
                 "gcu": row.get("gcu", ""),
                 "city": row.get("city", ""),
                 "locality": row.get("locality", ""),
@@ -62,6 +63,7 @@ def build_caller_csv(p2_stores, caller_agents: list) -> bytes:
             "agent_name": assigned_caller,
             "store_id": row.get("store_id", ""),
             "store_name": row.get("store_name", ""),
+            "store_username": row.get("store_username", ""),
             "gcu": row.get("gcu", ""),
             "city": row.get("city", ""),
             "locality": row.get("locality", ""),
