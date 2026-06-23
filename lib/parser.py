@@ -19,7 +19,6 @@ REQUIRED_COLUMNS = [
     "Pending GMV MTD",
 ]
 
-FIELD_PREFIXES = ("[SKAS/", "[GKAS/")
 CALLER_PREFIX = "[Caller/KA]"
 
 _EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
@@ -70,8 +69,9 @@ def parse_xlsx(file) -> dict:
     df["has_pending"] = df["Pending GMV MTD"] > 0
 
     all_agents = df["agent"].dropna().unique().tolist()
-    field_agents = [a for a in all_agents if str(a).startswith(FIELD_PREFIXES)]
     caller_agents = [a for a in all_agents if str(a).startswith(CALLER_PREFIX)]
+    caller_set = set(caller_agents)
+    field_agents = [a for a in all_agents if a not in caller_set]
 
     return {
         "stores": df,
